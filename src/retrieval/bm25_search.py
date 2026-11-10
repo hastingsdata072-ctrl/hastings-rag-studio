@@ -59,8 +59,12 @@ def bm25_search(
     scores = bm25.get_scores(query_tokens)
 
     # Attach scores and sort
+    # Also set a normalised 'score' key for consistency with vector search results
+    max_score = float(max(scores)) if scores.max() > 0 else 1.0
     for i, chunk in enumerate(chunks):
-        chunk["bm25_score"] = float(scores[i])
+        raw = float(scores[i])
+        chunk["bm25_score"] = raw
+        chunk["score"] = round(raw / max_score, 4)  # Normalised 0–1
 
     ranked = sorted(chunks, key=lambda x: x["bm25_score"], reverse=True)
     return ranked[:top_k]

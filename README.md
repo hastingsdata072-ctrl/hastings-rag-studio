@@ -17,24 +17,24 @@ A professional **Document Intelligence and Agentic RAG platform** built by Hasti
 
 ### Core RAG Pipeline
 - 📄 **Multi-format ingestion** — PDF (with page numbers), DOCX, TXT, Markdown
-- 🔍 **Hybrid retrieval** — Vector search + BM25 keyword search merged with Reciprocal Rank Fusion
+- 🔍 **Hybrid retrieval** — Vector search + BM25 keyword search merged with Reciprocal Rank Fusion (RRF)
 - 🎯 **Cross-encoder reranking** — Precision reranking of top candidates
 - 🔄 **Query rewriting** — LLM-powered query expansion for better retrieval
-- ✂️ **Context compression** — Trim irrelevant sentences before generation
+- ✂️ **Context compression** — Trims irrelevant sentences before generation to reduce token usage
 - 💬 **Grounded generation** — Groq LLM answers only from retrieved evidence
 - 📚 **Citations** — Every claim mapped to [S1], [S2] with filename and page number
-- ✅ **Citation verification** — Flags unsupported statements automatically
+- ✅ **Citation verification** — Flags unsupported statements automatically using embedding similarity
 
 ### Intelligence & Evaluation
-- 🔬 **RAG Intelligence Lab** — Inspect every pipeline step with latency metrics
+- 🔬 **RAG Intelligence Lab** — Inspect every pipeline step with per-stage latency metrics
 - 📊 **Evaluation dashboard** — Precision@k, Recall@k, MRR against labelled test sets
 - 💾 **Persistent chat history** — Conversations saved to PostgreSQL, exportable as Markdown/JSON
-- 🔧 **Model selector** — Switch Groq models from the UI
+- 🔧 **Model selector** — Switch Groq models from the UI without restarting
 
 ### Infrastructure
 - 🗄️ **PostgreSQL + pgvector** — HNSW index for fast approximate nearest-neighbour search
-- 🐳 **Docker** — Containerised for consistent deployment
-- ☁️ **Render + Neon** — Free-tier cloud deployment
+- 🐳 **Docker** — Multi-stage build, models pre-baked into the image for zero cold-start
+- ☁️ **Render + Neon** — Free-tier cloud deployment included
 
 ---
 
@@ -80,8 +80,9 @@ Answer + Sources + Evidence
 |---|---|
 | Python | 3.11+ |
 | Docker | Any recent version |
+| WSL 2 | Ubuntu 20.04+ recommended |
 
-### Local Setup (Windows PowerShell / WSL)
+### Local Setup (WSL / Linux)
 
 **1. Start PostgreSQL with pgvector:**
 ```bash
@@ -97,7 +98,7 @@ docker run --name hastings-pg \
 git clone https://github.com/hastingsdata072-ctrl/hastings-rag-studio.git
 cd hastings-rag-studio
 python3.11 -m venv venv
-source venv/bin/activate        # Windows: .\venv\Scripts\Activate.ps1
+source venv/bin/activate
 pip install -r requirements.txt
 ```
 
@@ -118,6 +119,8 @@ streamlit run app.py --server.fileWatcherType none
 ```
 
 Open [http://localhost:8501](http://localhost:8501)
+
+> **Note:** All development and testing was done on WSL 2 (Ubuntu). Running natively on Windows without WSL is not tested and not recommended.
 
 ---
 
@@ -147,34 +150,35 @@ hastings-rag-studio/
 ├── scripts/
 │   └── init_db.py              # Database initialisation
 ├── src/
-│   ├── config.py               # Settings loader
+│   ├── config.py               # Settings loader (typed, validated)
+│   ├── health.py               # Live health checks for all components
 │   ├── db/
-│   │   ├── connection.py       # psycopg v3 connection pool
-│   │   ├── schema.py           # Idempotent DDL
-│   │   ├── queries.py          # All DB operations
+│   │   ├── connection.py       # psycopg v3 connection with commit/rollback
+│   │   ├── schema.py           # Idempotent DDL — safe to re-run
+│   │   ├── queries.py          # All DB operations (parameterised SQL)
 │   │   └── chat_history.py     # Persistent conversations
 │   ├── ingestion/
 │   │   ├── extractor.py        # PDF, DOCX, TXT, MD extraction
-│   │   ├── chunker.py          # Overlap chunking
+│   │   ├── chunker.py          # Overlap chunking with sentence-boundary breaks
 │   │   └── pipeline.py         # Full ingestion orchestration
 │   ├── embeddings/
 │   │   └── embedder.py         # sentence-transformers wrapper
 │   ├── retrieval/
 │   │   ├── vector_search.py    # pgvector cosine similarity
-│   │   ├── bm25_search.py      # BM25 keyword search
-│   │   ├── hybrid_search.py    # RRF fusion
+│   │   ├── bm25_search.py      # BM25 keyword search (normalised scores)
+│   │   ├── hybrid_search.py    # RRF fusion of vector + BM25
 │   │   ├── reranker.py         # Cross-encoder reranking
 │   │   ├── query_rewriter.py   # LLM query rewriting
-│   │   └── context_compressor.py
+│   │   └── context_compressor.py # Sentence-level context trimming
 │   ├── generation/
 │   │   ├── groq_client.py      # Groq API wrapper
-│   │   ├── prompts.py          # Prompt builder
-│   │   └── citation_verifier.py
+│   │   ├── prompts.py          # Prompt builder with citation instructions
+│   │   └── citation_verifier.py # Embedding-based statement verification
 │   └── evaluation/
 │       ├── metrics.py          # Precision@k, Recall@k, MRR
 │       └── eval_runner.py      # Evaluation pipeline
 ├── tests/
-│   └── test_db_connection.py   # Milestone 1 acceptance tests
+│   └── test_db_connection.py   # DB acceptance tests
 └── deploy/
     ├── deploy.sh               # AWS Lightsail deploy script
     └── init_prod_db.sql        # Production DB initialisation
@@ -191,11 +195,12 @@ hastings-rag-studio/
 | Embeddings | sentence-transformers `all-MiniLM-L6-v2` (384d) |
 | Vector database | PostgreSQL 16 + pgvector (HNSW, cosine) |
 | PostgreSQL driver | psycopg v3 |
-| Keyword search | rank-bm25 |
+| Keyword search | rank-bm25 (BM25Okapi) |
 | Reranker | cross-encoder/ms-marco-MiniLM-L-6-v2 |
 | PDF extraction | PyMuPDF |
 | DOCX extraction | python-docx |
 | Config | python-dotenv |
+| Environment | WSL 2 (Ubuntu) |
 | Deployment | Docker + Render + Neon |
 
 ---
@@ -216,10 +221,10 @@ hastings-rag-studio/
 
 ## 📊 Milestone Progress
 
-- [x] **Milestone 1** — Foundation: skeleton, DB, health checks, status page
+- [x] **Milestone 1** — Foundation: skeleton, DB schema, health checks, system status page
 - [x] **Milestone 2** — Core RAG: upload, chunk, embed, retrieve, generate, citations
 - [x] **Milestone 3** — Advanced RAG: hybrid retrieval, reranking, query rewriting, RAG Lab
-- [x] **Milestone 4** — Product: persistent chat, evaluation dashboard, cloud deployment
+- [x] **Milestone 4** — Product: persistent chat history, evaluation dashboard, cloud deployment
 
 ---
 

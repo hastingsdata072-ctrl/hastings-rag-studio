@@ -40,8 +40,9 @@ def extract_pdf(file_bytes: bytes) -> ExtractionResult:
 
     pages: list[ExtractedPage] = []
     doc = fitz.open(stream=file_bytes, filetype="pdf")
+    total_pages = len(doc)  # Capture before close — len(doc) returns 0 after close()
 
-    for page_num in range(len(doc)):
+    for page_num in range(total_pages):
         page = doc[page_num]
         text = page.get_text("text").strip()
         if text:
@@ -50,7 +51,7 @@ def extract_pdf(file_bytes: bytes) -> ExtractionResult:
     doc.close()
     return ExtractionResult(
         pages=pages,
-        page_count=len(doc) if pages else 0,
+        page_count=total_pages if pages else 0,
         file_type="pdf",
         content_hash=_hash_bytes(file_bytes),
     )
